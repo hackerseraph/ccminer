@@ -34,3 +34,15 @@ Compile on Linux
 ----------------
 
 Please see [INSTALL](https://github.com/tpruvot/ccminer/blob/linux/INSTALL) file or [project Wiki](https://github.com/tpruvot/ccminer/wiki/Compatibility)
+
+Modern toolchain note (CUDA 12+, GCC 15)
+----------------------------------------
+
+This tree now builds with recent toolchains (tested with CUDA 12.4 and GCC 15) in addition to the historical toolchains listed above.
+
+To keep legacy code compiling on CUDA 12+, compatibility fallbacks were added for APIs removed from modern CUDA headers (notably texture-reference based kernels).
+
+Important caveat:
+
+- Some legacy, texture-reference-heavy paths are currently build-time compatibility stubs on CUDA 12+.
+- This keeps `make -j$(nproc)` successful on modern systems, but may reduce or disable runtime functionality/performance for those specific legacy algorithms.
