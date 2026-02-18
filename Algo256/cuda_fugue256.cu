@@ -6,6 +6,8 @@
 #include "cuda_helper.h"
 #include <host_defines.h>
 
+#if !defined(CUDART_VERSION) || (CUDART_VERSION < 12000)
+
 #define USE_SHARED 1
 
 uint32_t *d_fugue256_hashoutput[MAX_GPUS];
@@ -783,3 +785,50 @@ void fugue256_cpu_hash(int thr_id, uint32_t threads, uint32_t startNounce, void 
 	//cudaMemcpy(outputHashes, d_fugue256_hashoutput[thr_id], 8 * sizeof(uint32_t), cudaMemcpyDeviceToHost);
 	cudaMemcpy(nounce, d_resultNonce[thr_id], sizeof(uint32_t), cudaMemcpyDeviceToHost);
 }
+
+#else
+
+uint32_t *d_fugue256_hashoutput[MAX_GPUS];
+static uint32_t *d_resultNonce[MAX_GPUS];
+
+__host__
+void fugue256_cpu_init(int thr_id, uint32_t threads)
+{
+	CUDA_SAFE_CALL(cudaMalloc(&d_fugue256_hashoutput[thr_id], (size_t) 32 * threads));
+	CUDA_SAFE_CALL(cudaMalloc(&d_resultNonce[thr_id], sizeof(uint32_t)));
+}
+
+__host__
+void fugue256_cpu_free(int thr_id)
+{
+	if (d_fugue256_hashoutput[thr_id]) {
+		cudaFree(d_fugue256_hashoutput[thr_id]);
+		d_fugue256_hashoutput[thr_id] = NULL;
+	}
+	if (d_resultNonce[thr_id]) {
+		cudaFree(d_resultNonce[thr_id]);
+		d_resultNonce[thr_id] = NULL;
+	}
+}
+
+__host__
+void fugue256_cpu_setBlock(int thr_id, void *data, void *pTargetIn)
+{
+	(void)thr_id;
+	(void)data;
+	(void)pTargetIn;
+}
+
+__host__
+void fugue256_cpu_hash(int thr_id, uint32_t threads, uint32_t startNounce, void *outputHashes, uint32_t *nounce)
+{
+	(void)threads;
+	(void)startNounce;
+	(void)outputHashes;
+	if (nounce) {
+		*nounce = UINT32_MAX;
+	}
+	(void)thr_id;
+}
+
+#endif

@@ -6,6 +6,8 @@
 
 #include "cuda_helper.h"
 
+#if !defined(CUDART_VERSION) || (CUDART_VERSION < 12000)
+
 // globaler Speicher für alle HeftyHashes aller Threads
 extern uint32_t *heavy_heftyHashes[MAX_GPUS];
 extern uint32_t *heavy_nonceVector[MAX_GPUS];
@@ -832,3 +834,58 @@ __host__ void groestl512_cpu_hash(int thr_id, uint32_t threads, uint32_t startNo
 	else if (BLOCKSIZE == 80)
 		groestl512_gpu_hash<80><<<grid, block, shared_size>>>(threads, startNounce, d_hash4output[thr_id], heavy_heftyHashes[thr_id], heavy_nonceVector[thr_id]);
 }
+
+#else
+
+#include "miner.h"
+
+uint32_t *d_hash4output[MAX_GPUS];
+uint32_t T0up_cpu[256] = { 0 };
+uint32_t T0dn_cpu[256] = { 0 };
+uint32_t T1up_cpu[256] = { 0 };
+uint32_t T1dn_cpu[256] = { 0 };
+uint32_t T2up_cpu[256] = { 0 };
+uint32_t T2dn_cpu[256] = { 0 };
+uint32_t T3up_cpu[256] = { 0 };
+uint32_t T3dn_cpu[256] = { 0 };
+
+__host__
+void groestl512_cpu_init(int thr_id, uint32_t threads)
+{
+	CUDA_SAFE_CALL(cudaMalloc(&d_hash4output[thr_id], (size_t) 64 * threads));
+}
+
+__host__
+void groestl512_cpu_free(int thr_id)
+{
+	if (d_hash4output[thr_id]) {
+		cudaFree(d_hash4output[thr_id]);
+		d_hash4output[thr_id] = NULL;
+	}
+}
+
+__host__
+void groestl512_cpu_setBlock(void *data, int len)
+{
+	(void)data;
+	(void)len;
+}
+
+__host__
+void groestl512_cpu_copyHeftyHash(int thr_id, uint32_t threads, void *heftyHashes, int copy)
+{
+	(void)thr_id;
+	(void)threads;
+	(void)heftyHashes;
+	(void)copy;
+}
+
+__host__
+void groestl512_cpu_hash(int thr_id, uint32_t threads, uint32_t startNounce)
+{
+	(void)thr_id;
+	(void)threads;
+	(void)startNounce;
+}
+
+#endif

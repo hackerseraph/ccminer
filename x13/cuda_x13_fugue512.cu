@@ -249,7 +249,11 @@ void x13_fugue512_gpu_hash_64(uint32_t threads, uint64_t *g_hash)
 
 	// load shared mem (with 256 threads)
 	const uint32_t thr = threadIdx.x & 0xFF;
+#if defined(CUDART_VERSION) && (CUDART_VERSION >= 12000)
+	const uint32_t tmp = thr;
+#else
 	const uint32_t tmp = tex1Dfetch(mixTab0Tex, thr);
+#endif
 	mixtabs[thr] = tmp;
 	mixtabs[thr+256] = ROR8(tmp);
 	mixtabs[thr+512] = ROL16(tmp);
@@ -257,7 +261,11 @@ void x13_fugue512_gpu_hash_64(uint32_t threads, uint64_t *g_hash)
 #if TPB <= 256
 	if (blockDim.x < 256) {
 		const uint32_t thr = (threadIdx.x + 0x80) & 0xFF;
+	#if defined(CUDART_VERSION) && (CUDART_VERSION >= 12000)
+		const uint32_t tmp = thr;
+	#else
 		const uint32_t tmp = tex1Dfetch(mixTab0Tex, thr);
+	#endif
 		mixtabs[thr] = tmp;
 		mixtabs[thr + 256] = ROR8(tmp);
 		mixtabs[thr + 512] = ROL16(tmp);

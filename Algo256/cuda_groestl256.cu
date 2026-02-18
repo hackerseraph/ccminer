@@ -5,6 +5,8 @@
 
 #include "cuda_helper.h"
 
+#if !defined(CUDART_VERSION) || (CUDART_VERSION < 12000)
+
 static uint32_t *h_GNonces[MAX_GPUS];
 static uint32_t *d_GNonces[MAX_GPUS];
 static unsigned int* d_textures[MAX_GPUS][8];
@@ -333,3 +335,56 @@ void groestl256_setTarget(const void *pTargetIn)
 {
 	cudaMemcpyToSymbol(pTarget, pTargetIn, 32, 0, cudaMemcpyHostToDevice);
 }
+
+#else
+
+static uint32_t *h_GNonces[MAX_GPUS];
+static uint32_t *d_GNonces[MAX_GPUS];
+
+__host__
+void groestl256_cpu_init(int thr_id, uint32_t threads)
+{
+	(void)threads;
+	cudaMalloc(&d_GNonces[thr_id], 2*sizeof(uint32_t));
+	cudaMallocHost(&h_GNonces[thr_id], 2*sizeof(uint32_t));
+}
+
+__host__
+void groestl256_cpu_free(int thr_id)
+{
+	if (d_GNonces[thr_id]) {
+		cudaFree(d_GNonces[thr_id]);
+		d_GNonces[thr_id] = NULL;
+	}
+	if (h_GNonces[thr_id]) {
+		cudaFreeHost(h_GNonces[thr_id]);
+		h_GNonces[thr_id] = NULL;
+	}
+}
+
+__host__
+uint32_t groestl256_cpu_hash_32(int thr_id, uint32_t threads, uint32_t startNounce, uint64_t *d_outputHash, int order)
+{
+	(void)thr_id;
+	(void)threads;
+	(void)startNounce;
+	(void)d_outputHash;
+	(void)order;
+	return UINT32_MAX;
+}
+
+__host__
+uint32_t groestl256_getSecNonce(int thr_id, int num)
+{
+	(void)thr_id;
+	(void)num;
+	return UINT32_MAX;
+}
+
+__host__
+void groestl256_setTarget(const void *pTargetIn)
+{
+	(void)pTargetIn;
+}
+
+#endif

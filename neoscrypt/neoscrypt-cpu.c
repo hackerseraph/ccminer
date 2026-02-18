@@ -42,7 +42,6 @@ typedef unsigned long ulong;
 #endif
 typedef unsigned int  uint;
 typedef unsigned char uchar;
-typedef unsigned int  bool;
 
 #define MIN(a, b) ((a) < (b) ? a : b)
 #define MAX(a, b) ((a) > (b) ? a : b)

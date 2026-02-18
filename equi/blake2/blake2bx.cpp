@@ -241,7 +241,7 @@ int eq_blake2b_final(blake2b_state *S, uint8_t *out, uint8_t outlen)
 
 int eq_blake2b(uint8_t *out, const void *in, const void *key, const uint8_t outlen, const uint64_t inlen, uint8_t keylen)
 {
-	blake2b_state S[1];
+	blake2b_state S;
 
 	/* Verify parameters */
 	if (!in || !out) return -1;
@@ -249,14 +249,14 @@ int eq_blake2b(uint8_t *out, const void *in, const void *key, const uint8_t outl
 
 	if (keylen)
 	{
-		if (eq_blake2b_init_key(S, outlen, key, keylen) < 0) return -1;
+		if (eq_blake2b_init_key(&S, outlen, key, keylen) < 0) return -1;
 	}
 	else
 	{
-		if (eq_blake2b_init(S, outlen) < 0) return -1;
+		if (eq_blake2b_init(&S, outlen) < 0) return -1;
 	}
 
-	eq_blake2b_update(S, (const uint8_t *)in, inlen);
-	eq_blake2b_final(S, out, outlen);
+	eq_blake2b_update(&S, (const uint8_t *)in, inlen);
+	eq_blake2b_final(&S, out, outlen);
 	return 0;
 }

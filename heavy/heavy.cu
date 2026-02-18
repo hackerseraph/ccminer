@@ -3,14 +3,14 @@
 #include <cuda.h>
 #include <map>
 
-#ifndef WITH_HEAVY_ALGO
+#if !defined(WITH_HEAVY_ALGO) || (defined(CUDART_VERSION) && (CUDART_VERSION >= 12000))
 #include <unistd.h>
 #include "miner.h"
 // nonce array also used in other algos
 uint32_t *heavy_nonceVector[MAX_GPUS];
 int scanhash_heavy(int thr_id, struct work *work, uint32_t max_nonce, unsigned long *hashes_done, uint32_t maxvote, int blocklen)
 {
-	applog(LOG_ERR, "heavy algo not included in this build!");
+	applog(LOG_ERR, "heavy algo is unavailable in this build (requires legacy CUDA texture references; CUDA 12+ detected)");
 	sleep(3);
 	return -1;
 }

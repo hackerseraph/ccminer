@@ -4,6 +4,73 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#if defined(CUDART_VERSION) && (CUDART_VERSION >= 12000)
+template <typename T, int texType, cudaTextureReadMode readMode>
+struct texture {
+	int normalized;
+	cudaTextureFilterMode filterMode;
+	cudaTextureAddressMode addressMode[3];
+};
+
+template <typename T, int texType, cudaTextureReadMode readMode>
+__device__ __forceinline__ T tex1Dfetch(const texture<T, texType, readMode>& texRef, int idx)
+{
+	(void)texRef;
+	(void)idx;
+	return T();
+}
+
+template <typename T, int texType, cudaTextureReadMode readMode>
+__device__ __forceinline__ T tex2D(const texture<T, texType, readMode>& texRef, float x, float y)
+{
+	(void)texRef;
+	(void)x;
+	(void)y;
+	return T();
+}
+
+template <typename T, int texType, cudaTextureReadMode readMode>
+static inline cudaError_t cudaBindTexture(const size_t *offset,
+	const texture<T, texType, readMode> *texRef,
+	const void *devPtr,
+	const cudaChannelFormatDesc *desc,
+	size_t size = (size_t)-1)
+{
+	(void)offset;
+	(void)texRef;
+	(void)devPtr;
+	(void)desc;
+	(void)size;
+	return cudaSuccess;
+}
+
+template <typename T, int texType, cudaTextureReadMode readMode>
+static inline cudaError_t cudaBindTexture2D(const size_t *offset,
+	const texture<T, texType, readMode> *texRef,
+	const void *devPtr,
+	const cudaChannelFormatDesc *desc,
+	size_t width,
+	size_t height,
+	size_t pitch)
+{
+	(void)offset;
+	(void)texRef;
+	(void)devPtr;
+	(void)desc;
+	(void)width;
+	(void)height;
+	(void)pitch;
+	return cudaSuccess;
+}
+
+template <typename T, int texType, cudaTextureReadMode readMode>
+static inline cudaError_t cudaUnbindTexture(const texture<T, texType, readMode>& texRef)
+{
+	(void)texRef;
+	return cudaSuccess;
+}
+#endif
+
 #ifdef __INTELLISENSE__
 /* reduce vstudio warnings (__byteperm, blockIdx...) */
 #include <device_functions.h>
@@ -102,7 +169,7 @@ __device__ __forceinline__ uint64_t REPLACE_LODWORD(const uint64_t &x, const uin
 	return (x & 0xFFFFFFFF00000000ULL) | ((uint64_t)y);
 }
 
-// Endian Drehung für 32 Bit Typen
+// Endian Drehung fï¿½r 32 Bit Typen
 #ifdef __CUDA_ARCH__
 __device__ __forceinline__ uint32_t cuda_swab32(uint32_t x)
 {
