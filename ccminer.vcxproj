@@ -246,6 +246,8 @@
     <ClCompile Include="nvsettings.cpp" />
     <ClCompile Include="pools.cpp" />
     <ClCompile Include="util.cpp" />
+    <ClCompile Include="gpu_optimize.c" />
+    <ClCompile Include="optimize.c" />
     <ClCompile Include="bench.cpp" />
     <ClCompile Include="bignum.cpp" />
     <ClInclude Include="bignum.hpp" />

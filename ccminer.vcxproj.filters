@@ -156,6 +156,12 @@
     <ClCompile Include="pools.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="gpu_optimize.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="optimize.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="crc32.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -369,6 +375,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="miner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gpu_optimize.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="optimize.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="compat\sys\time.h">
