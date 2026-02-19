@@ -45,6 +45,8 @@
 #include "sia/sia-rpc.h"
 #include "crypto/xmr-rpc.h"
 #include "equi/equihash.h"
+#include "gpu_optimize.h"
+#include "optimize.h"
 
 #include <cuda_runtime.h>
 
@@ -609,6 +611,10 @@ void proper_exit(int reason)
 	abort_flag = true;
 	usleep(200 * 1000);
 	cuda_shutdown();
+	
+	// Cleanup optimization structures
+	cuda_stream_pool_cleanup();
+	gpu_mem_pool_cleanup();
 
 	if (reason == EXIT_CODE_OK && app_exit_code != EXIT_CODE_OK) {
 		reason = app_exit_code;
@@ -2338,7 +2344,10 @@ static void *miner_thread(void *userdata)
 		else
 			max_nonce = (uint32_t) (max64 + start_nonce);
 
-		// todo: keep it rounded to a multiple of 256 ?
+		// Round nonce range to 256-byte boundaries for better GPU warp efficiency
+		// This ensures all threads in a warp do aligned memory access
+		start_nonce = align_nonce_start(start_nonce);
+		max_nonce = align_nonce_end(max_nonce);
 
 		if (unlikely(start_nonce > max_nonce)) {
 			// should not happen but seen in skein2 benchmark with 2 gpus
@@ -2361,246 +2370,55 @@ static void *miner_thread(void *userdata)
 		hashes_done = 0;
 		gettimeofday(&tv_start, NULL);
 
-		// check (and reset) previous errors
-		cudaError_t err = cudaGetLastError();
-		if (err != cudaSuccess && !opt_quiet)
-			gpulog(LOG_WARNING, thr_id, "%s", cudaGetErrorString(err));
+		// Only check GPU errors in debug mode (avoids GPU sync in hot path)
+		GPU_CHECK_ERROR_ASYNC();
 
 		work.valid_nonces = 0;
 
-		/* scan nonces for a proof-of-work hash */
-		switch (opt_algo) {
-
-		case ALGO_ALLIUM:
-			rc = scanhash_allium(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BASTION:
-			rc = scanhash_bastion(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BLAKECOIN:
+		/* Dispatch to algorithm via function pointer (single indirect call, no branch misprediction) */
+		// Special handling for algorithms with extra parameters
+		if (opt_algo == ALGO_BLAKECOIN) {
 			rc = scanhash_blake256(thr_id, &work, max_nonce, &hashes_done, 8);
-			break;
-		case ALGO_BLAKE:
+		} else if (opt_algo == ALGO_BLAKE) {
 			rc = scanhash_blake256(thr_id, &work, max_nonce, &hashes_done, 14);
-			break;
-		case ALGO_BLAKE2B:
-			rc = scanhash_blake2b(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BLAKE2S:
-			rc = scanhash_blake2s(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BMW:
-			rc = scanhash_bmw(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_C11:
-			rc = scanhash_c11(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_CRYPTOLIGHT:
+		} else if (opt_algo == ALGO_VANILLA) {
+			rc = scanhash_vanilla(thr_id, &work, max_nonce, &hashes_done, 8);
+		} else if (opt_algo == ALGO_CRYPTOLIGHT) {
 			rc = scanhash_cryptolight(thr_id, &work, max_nonce, &hashes_done, 1);
-			break;
-		case ALGO_MONERO:
-		case ALGO_STELLITE:
-		case ALGO_GRAFT:
-		case ALGO_CRYPTONIGHT:
-		{
+		} else if (opt_algo == ALGO_CRYPTONIGHT || opt_algo == ALGO_MONERO || 
+		           opt_algo == ALGO_STELLITE || opt_algo == ALGO_GRAFT) {
 			int cn_variant = 0;
 			if (cryptonight_fork > 1 && ((unsigned char*)work.data)[0] >= cryptonight_fork)
 				cn_variant = ((unsigned char*)work.data)[0] - cryptonight_fork + 1;
 			rc = scanhash_cryptonight(thr_id, &work, max_nonce, &hashes_done, cn_variant);
-			break;
-		}
-		case ALGO_DECRED:
-			rc = scanhash_decred(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_DEEP:
-			rc = scanhash_deep(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_EQUIHASH:
-			rc = scanhash_equihash(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_FRESH:
-			rc = scanhash_fresh(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_FUGUE256:
-			rc = scanhash_fugue256(thr_id, &work, max_nonce, &hashes_done);
-			break;
-
-		case ALGO_GROESTL:
-		case ALGO_DMD_GR:
-			rc = scanhash_groestlcoin(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_MYR_GR:
-			rc = scanhash_myriad(thr_id, &work, max_nonce, &hashes_done);
-			break;
-
-		case ALGO_HMQ1725:
-			rc = scanhash_hmq17(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_HSR:
-			rc = scanhash_hsr(thr_id, &work, max_nonce, &hashes_done);
-			break;
-#ifdef WITH_HEAVY_ALGO
-		case ALGO_HEAVY:
+		} else if (opt_algo == ALGO_HEAVY) {
 			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, work.maxvote, HEAVYCOIN_BLKHDR_SZ);
-			break;
-		case ALGO_MJOLLNIR:
+		} else if (opt_algo == ALGO_MJOLLNIR) {
 			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, 0, MNR_BLKHDR_SZ);
-			break;
-#endif
-		case ALGO_KECCAK:
-		case ALGO_KECCAKC:
+		} else if (opt_algo == ALGO_SCRYPT) {
+			rc = scanhash_scrypt(thr_id, &work, max_nonce, &hashes_done, NULL, &tv_start, &tv_end);
+		} else if (opt_algo == ALGO_SCRYPT_JANE) {
+			rc = scanhash_scrypt_jane(thr_id, &work, max_nonce, &hashes_done, NULL, &tv_start, &tv_end);
+		} else if (opt_algo == ALGO_GROESTL || opt_algo == ALGO_DMD_GR) {
+			rc = scanhash_groestlcoin(thr_id, &work, max_nonce, &hashes_done);
+		} else if (opt_algo == ALGO_KECCAK || opt_algo == ALGO_KECCAKC) {
 			rc = scanhash_keccak256(thr_id, &work, max_nonce, &hashes_done);
-			break;
-
-		case ALGO_JACKPOT:
-			rc = scanhash_jackpot(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_JHA:
-			rc = scanhash_jha(thr_id, &work, max_nonce, &hashes_done);
-			break;
-
-		case ALGO_LBRY:
-			rc = scanhash_lbry(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LUFFA:
-			rc = scanhash_luffa(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_QUARK:
-			rc = scanhash_quark(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_QUBIT:
-			rc = scanhash_qubit(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LYRA2:
-			rc = scanhash_lyra2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LYRA2v2:
-			rc = scanhash_lyra2v2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LYRA2v3:
-			rc = scanhash_lyra2v3(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_LYRA2Z:
-			rc = scanhash_lyra2Z(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_NEOSCRYPT:
-			rc = scanhash_neoscrypt(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_NIST5:
-			rc = scanhash_nist5(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_PENTABLAKE:
-			rc = scanhash_pentablake(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_PHI:
-			rc = scanhash_phi(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_PHI2:
-			rc = scanhash_phi2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_POLYTIMOS:
-			rc = scanhash_polytimos(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SCRYPT:
-			rc = scanhash_scrypt(thr_id, &work, max_nonce, &hashes_done,
-				NULL, &tv_start, &tv_end);
-			break;
-		case ALGO_SCRYPT_JANE:
-			rc = scanhash_scrypt_jane(thr_id, &work, max_nonce, &hashes_done,
-				NULL, &tv_start, &tv_end);
-			break;
-		case ALGO_SKEIN:
-			rc = scanhash_skeincoin(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SKEIN2:
-			rc = scanhash_skein2(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SKUNK:
-			rc = scanhash_skunk(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SHA256D:
-			rc = scanhash_sha256d(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SHA256T:
-			rc = scanhash_sha256t(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SHA256Q:
-			rc = scanhash_sha256q(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SIA:
-			rc = scanhash_sia(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SIB:
-			rc = scanhash_sib(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SONOA:
-			rc = scanhash_sonoa(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_S3:
-			rc = scanhash_s3(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_VANILLA:
-			rc = scanhash_vanilla(thr_id, &work, max_nonce, &hashes_done, 8);
-			break;
-		case ALGO_VELTOR:
-			rc = scanhash_veltor(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_WHIRLCOIN:
-		case ALGO_WHIRLPOOL:
+		} else if (opt_algo == ALGO_WHIRLCOIN || opt_algo == ALGO_WHIRLPOOL) {
 			rc = scanhash_whirl(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		//case ALGO_WHIRLPOOLX:
-		//	rc = scanhash_whirlx(thr_id, &work, max_nonce, &hashes_done);
-		//	break;
-		case ALGO_WILDKECCAK:
-			rc = scanhash_wildkeccak(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_TIMETRAVEL:
-			rc = scanhash_timetravel(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_TRIBUS:
-			rc = scanhash_tribus(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_BITCORE:
-			rc = scanhash_bitcore(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_EXOSIS:
-			rc = scanhash_exosis(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X11EVO:
-			rc = scanhash_x11evo(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X11:
-			rc = scanhash_x11(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X12:
-			rc = scanhash_x12(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X13:
-			rc = scanhash_x13(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X14:
-			rc = scanhash_x14(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X15:
-			rc = scanhash_x15(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X16R:
-			rc = scanhash_x16r(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X16S:
-			rc = scanhash_x16s(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_X17:
-			rc = scanhash_x17(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_ZR5:
-			rc = scanhash_zr5(thr_id, &work, max_nonce, &hashes_done);
-			break;
-
-		default:
-			/* should never happen */
-			goto out;
+		} else {
+			// Use function pointer dispatch for all other algorithms (majority case)
+			// This is a single indirect jump, no branch prediction overhead
+			if (unlikely(opt_algo < 0 || opt_algo >= ALGO_COUNT)) {
+				rc = 0;
+			} else {
+				scanhash_fn fn = scanhash_functions[opt_algo];
+				if (likely(fn != NULL)) {
+					rc = fn(thr_id, &work, max_nonce, &hashes_done);
+				} else {
+					gpulog(LOG_ERR, thr_id, "Algorithm %d not initialized", opt_algo);
+					rc = 0;
+				}
+			}
 		}
 
 		if (opt_led_mode == LED_MODE_MINING)
@@ -4188,6 +4006,15 @@ int main(int argc, char *argv[])
 	work_restart = (struct work_restart *)calloc(opt_n_threads, sizeof(*work_restart));
 	if (!work_restart)
 		return EXIT_CODE_SW_INIT_ERROR;
+
+	// Initialize algorithm dispatch function pointers (single-time setup for performance)
+	init_scanhash_functions();
+	
+	// Initialize work batching and memory pooling for reduced lock contention
+	work_batch_init();
+	cuda_stream_pool_init();
+	gpu_mem_pool_init(256 * 1024 * 1024);  // Pre-allocate 256MB
+	prefetch_queue_init();
 
 	thr_info = (struct thr_info *)calloc(opt_n_threads + 5, sizeof(*thr));
 	if (!thr_info)
