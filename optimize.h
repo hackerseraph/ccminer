@@ -5,6 +5,10 @@
 #include <cuda_runtime.h>
 #include "miner.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Work batch functions
 void work_batch_init(void);
 void work_batch_add(struct work *w);
@@ -24,5 +28,9 @@ void gpu_mem_pool_cleanup(void);
 void prefetch_queue_init(void);
 void prefetch_queue_push(struct work *w);
 struct work* prefetch_queue_pop_nowait(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

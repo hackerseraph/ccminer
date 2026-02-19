@@ -1,80 +1,14 @@
 // GPU optimization implementations
 #include "gpu_optimize.h"
+#include "miner.h"
 #include "algos.h"
+#include <cuda_runtime.h>
 #include <stdio.h>
 
 lock_free_log_t gpu_log_buffer = {0};
 gpu_occupancy_t gpu_occupancy[100] = {0};
 
-// Forward declarations of all scanhash functions
-extern int scanhash_allium(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_bastion(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_blake256(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, int rounds);
-extern int scanhash_blake2b(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_blake2s(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_bmw(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_c11(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_cryptolight(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, int variant);
-extern int scanhash_cryptonight(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, int variant);
-extern int scanhash_decred(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_deep(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_equihash(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_fresh(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_fugue256(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_groestlcoin(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_myriad(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_hmq17(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_hsr(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_heavy(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, int vote, int header_size);
-extern int scanhash_keccak256(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_jackpot(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_jha(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_lbry(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_luffa(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_quark(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_qubit(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_lyra2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_lyra2v2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_lyra2Z(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_neoscrypt(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_nist5(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_pentablake(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_phi(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_phi2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_polytimos(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_scrypt(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, void *scratchpad, struct timeval *tv_start, struct timeval *tv_end);
-extern int scanhash_scrypt_jane(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, void *scratchpad, struct timeval *tv_start, struct timeval *tv_end);
-extern int scanhash_skeincoin(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_skein2(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_skunk(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sha256d(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sha256t(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sia(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sib(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_sonoa(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_s3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_vanilla(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, int rounds);
-extern int scanhash_veltor(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_whirl(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_wildkeccak(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_timetravel(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_tribus(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_bitcore(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_exosis(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x11evo(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x11(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x12(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x13(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x14(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x15(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x16r(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x16s(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_x17(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-extern int scanhash_zr5(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done);
-
-// Function pointer array indexed by algorithm ID
+// Function pointer array indexed by algorithm ID (all declarations are in miner.h)
 scanhash_fn scanhash_functions[ALGO_COUNT] = {0};
 
 void init_scanhash_functions(void) {

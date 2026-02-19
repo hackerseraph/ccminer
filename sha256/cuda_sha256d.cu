@@ -9,6 +9,7 @@
 
 #include <cuda_helper.h>
 #include <miner.h>
+#include "optimize.h"
 
 __constant__ static uint32_t __align__(8) c_midstate76[8];
 __constant__ static uint32_t __align__(8) c_dataEnd80[4];
@@ -22,6 +23,9 @@ __constant__ static uint32_t __align__(8) c_target[2];
 __device__ uint64_t d_target[1];
 
 static uint32_t* d_resNonces[MAX_GPUS] = { 0 };
+static int sha256d_best_tpb[MAX_GPUS] = { 0 };
+static cudaStream_t sha256d_stream[MAX_GPUS] = { 0 };
+static bool sha256d_stream_init[MAX_GPUS] = { false };
 
 // ------------------------------------------------------------------------------------------------
 
@@ -373,8 +377,14 @@ uint64_t cuda_swab32ll(uint64_t x) {
 	return MAKE_ULONGLONG(cuda_swab32(_LODWORD(x)), cuda_swab32(_HIDWORD(x)));
 }
 
-__global__
-/*__launch_bounds__(256,3)*/
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 600)
+#define SHA256D_LAUNCH_BOUNDS(TPB) __launch_bounds__(TPB, 2)
+#else
+#define SHA256D_LAUNCH_BOUNDS(TPB) __launch_bounds__(TPB, 1)
+#endif
+
+template <int TPB>
+__global__ SHA256D_LAUNCH_BOUNDS(TPB)
 void sha256d_gpu_hash_shared(const uint32_t threads, const uint32_t startNonce, uint32_t *resNonces)
 {
 	const uint32_t thread = (blockDim.x * blockIdx.x + threadIdx.x);
@@ -427,12 +437,85 @@ void sha256d_gpu_hash_shared(const uint32_t threads, const uint32_t startNonce, 
 	}
 }
 
+static inline void sha256d_launch_kernel(int threadsperblock, dim3 grid, cudaStream_t stream,
+	uint32_t threads, uint32_t startNonce, uint32_t *resNonces)
+{
+	switch (threadsperblock) {
+		case 128:
+			sha256d_gpu_hash_shared<128><<<grid, dim3(128), 0, stream>>>(threads, startNonce, resNonces);
+			break;
+		case 256:
+		default:
+			sha256d_gpu_hash_shared<256><<<grid, dim3(256), 0, stream>>>(threads, startNonce, resNonces);
+			break;
+		case 512:
+			sha256d_gpu_hash_shared<512><<<grid, dim3(512), 0, stream>>>(threads, startNonce, resNonces);
+			break;
+	}
+}
+
+static int sha256d_autotune_tpb(int thr_id, uint32_t threads, uint32_t startNonce)
+{
+	if (sha256d_best_tpb[thr_id]) {
+		return sha256d_best_tpb[thr_id];
+	}
+
+	int candidates[2] = { 128, 256 };
+	int candidate_count = 2;
+	int dev_id = device_map[thr_id % MAX_GPUS];
+	int sm = (int)device_sm[dev_id];
+	if (sm >= 700) {
+		candidates[0] = 256;
+		candidates[1] = 512;
+	}
+	float best_ms = 0.0f;
+	int best_tpb = 256;
+
+	cudaStream_t stream = sha256d_stream[thr_id];
+
+	for (int i = 0; i < candidate_count; ++i) {
+		const int tpb = candidates[i];
+		const uint32_t blocks = (threads + tpb - 1) / tpb;
+		if (blocks == 0) {
+			continue;
+		}
+
+		cudaEvent_t start;
+		cudaEvent_t stop;
+		CUDA_SAFE_CALL(cudaEventCreate(&start));
+		CUDA_SAFE_CALL(cudaEventCreate(&stop));
+
+		CUDA_SAFE_CALL(cudaMemsetAsync(d_resNonces[thr_id], 0xFF, 2 * sizeof(uint32_t), stream));
+		CUDA_SAFE_CALL(cudaEventRecord(start, stream));
+		sha256d_launch_kernel(tpb, dim3(blocks), stream, threads, startNonce, d_resNonces[thr_id]);
+		CUDA_SAFE_CALL(cudaEventRecord(stop, stream));
+		CUDA_SAFE_CALL(cudaEventSynchronize(stop));
+
+		float ms = 0.0f;
+		CUDA_SAFE_CALL(cudaEventElapsedTime(&ms, start, stop));
+		CUDA_SAFE_CALL(cudaEventDestroy(start));
+		CUDA_SAFE_CALL(cudaEventDestroy(stop));
+
+		if (best_ms == 0.0f || ms < best_ms) {
+			best_ms = ms;
+			best_tpb = tpb;
+		}
+	}
+
+	sha256d_best_tpb[thr_id] = best_tpb;
+	return best_tpb;
+}
+
 __host__
 void sha256d_init(int thr_id)
 {
 	cuda_get_arch(thr_id);
 	cudaMemcpyToSymbol(c_K, cpu_K, sizeof(cpu_K), 0, cudaMemcpyHostToDevice);
 	CUDA_SAFE_CALL(cudaMalloc(&d_resNonces[thr_id], 2*sizeof(uint32_t)));
+	if (!sha256d_stream_init[thr_id]) {
+		CUDA_SAFE_CALL(cudaStreamCreateWithFlags(&sha256d_stream[thr_id], cudaStreamNonBlocking));
+		sha256d_stream_init[thr_id] = true;
+	}
 }
 
 __host__
@@ -440,6 +523,11 @@ void sha256d_free(int thr_id)
 {
 	if (d_resNonces[thr_id]) cudaFree(d_resNonces[thr_id]);
 	d_resNonces[thr_id] = NULL;
+	if (sha256d_stream_init[thr_id]) {
+		cudaStreamDestroy(sha256d_stream[thr_id]);
+		sha256d_stream[thr_id] = 0;
+		sha256d_stream_init[thr_id] = false;
+	}
 }
 
 __host__
@@ -460,17 +548,17 @@ void sha256d_setBlock_80(uint32_t *pdata, uint32_t *ptarget)
 __host__
 void sha256d_hash_80(int thr_id, uint32_t threads, uint32_t startNonce, uint32_t *resNonces)
 {
-	const uint32_t threadsperblock = 256;
+	const int threadsperblock = sha256d_autotune_tpb(thr_id, threads, startNonce);
+	const uint32_t blocks = (threads + threadsperblock - 1) / threadsperblock;
 
-	dim3 grid(threads/threadsperblock);
-	dim3 block(threadsperblock);
+	dim3 grid(blocks);
 
-	CUDA_SAFE_CALL(cudaMemset(d_resNonces[thr_id], 0xFF, 2 * sizeof(uint32_t)));
-	cudaThreadSynchronize();
-	sha256d_gpu_hash_shared <<<grid, block>>> (threads, startNonce, d_resNonces[thr_id]);
-	cudaThreadSynchronize();
+	cudaStream_t stream = sha256d_stream[thr_id];
 
-	CUDA_SAFE_CALL(cudaMemcpy(resNonces, d_resNonces[thr_id], 2 * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL(cudaMemsetAsync(d_resNonces[thr_id], 0xFF, 2 * sizeof(uint32_t), stream));
+	sha256d_launch_kernel(threadsperblock, grid, stream, threads, startNonce, d_resNonces[thr_id]);
+	CUDA_SAFE_CALL(cudaMemcpyAsync(resNonces, d_resNonces[thr_id], 2 * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+	CUDA_SAFE_CALL(cudaStreamSynchronize(stream));
 	if (resNonces[0] == resNonces[1]) {
 		resNonces[1] = UINT32_MAX;
 	}

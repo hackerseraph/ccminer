@@ -1,4 +1,7 @@
 // Memory and work batching optimizations
+#include "optimize.h"
+#include "miner.h"
+#include <cuda_runtime.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>

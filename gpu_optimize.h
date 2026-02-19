@@ -4,9 +4,15 @@
 #ifndef GPU_OPTIMIZE_H
 #define GPU_OPTIMIZE_H
 
+#include "miner.h"
+#include "algos.h"
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // ============================================================================
 // 1. LOCK-FREE RING BUFFER LOGGING (avoids mutex in hot path)
@@ -128,5 +134,9 @@ static inline int dispatch_scanhash(int algo_id, int thr_id, struct work *work,
 	}
 	return fn(thr_id, work, max_nonce, hashes_done);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // GPU_OPTIMIZE_H
