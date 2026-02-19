@@ -4,7 +4,7 @@
 //  Skein + JH + CubeHash + Fugue + Gost + Echo
 //
 //  Implemented by anorganix @ bitcointalk on 01.10.2017
-//  Feel free to send some satoshis to 1Bitcoin8tfbtGAQNFxDRUVUfFgFWKoWi9
+//  Feel free to send some satoshis to bc1qphnueg4qkenstq4ddskx87te45dx9jh5299f4g
 //
 //
 

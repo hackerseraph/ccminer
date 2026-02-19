@@ -6,16 +6,16 @@ ccminer 2.3.1                     "lyra2v3, exosis and sha256q"
 If you find this tool useful and like to support its continuous
           development, then consider a donation.
 
-tpruvot@github:
-  BTC  : 1AJdfCpLWPNoAMDfHF1wD5y8VgKSSTHxPo
+wallet owner:
+  BTC  : bc1qphnueg4qkenstq4ddskx87te45dx9jh5299f4g
   DCR  : DsUCcACGcyP8McNMRXQwbtpDxaVUYLDQDeU
 
 DJM34:
-  BTC donation address: 1NENYmxwZGHsKFmyjTc5WferTn5VTFb7Ze
+  BTC donation address: bc1qphnueg4qkenstq4ddskx87te45dx9jh5299f4g
 
 cbuchner v1.2:
-  LTC donation address: LKS1WDKGED647msBQfLBHV3Ls8sveGncnm
-  BTC donation address: 16hJF5mceSojnTD3ZTUDqdRhDyPJzoRakM
+  LTC donation address: bc1qphnueg4qkenstq4ddskx87te45dx9jh5299f4g
+  BTC donation address: bc1qphnueg4qkenstq4ddskx87te45dx9jh5299f4g
 
 ***************************************************************
 
@@ -251,7 +251,7 @@ Example for Groestlcoin solo mining
     ccminer -q -s 1 -a groestl -o http://127.0.0.1:1441/ -u USERNAME -p PASSWORD
 
 Example for Boolberry
-    ccminer -a wildkeccak -o stratum+tcp://bbr.suprnova.cc:7777 -u tpruvot.donate -p x -k http://bbr.suprnova.cc/scratchpad.bin -l 64x360
+    ccminer -a wildkeccak -o stratum+tcp://bbr.suprnova.cc:7777 -u youraccount.donate -p x -k http://bbr.suprnova.cc/scratchpad.bin -l 64x360
 
 Example for Scrypt-N (2048) on Nicehash
     ccminer -a scrypt:10 -o stratum+tcp://stratum.nicehash.com:3335 -u 3EujYFcoBzWvpUEvbe3obEG95mBuU88QBD -p x
