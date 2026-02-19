@@ -15,10 +15,10 @@ SUBDIRS = compat
 
 bin_PROGRAMS = ccminer
 
-ccminer_SOURCES	= elist.h miner.h compat.h \
+ccminer_SOURCES	= elist.h miner.h compat.h gpu_optimize.h optimize.h \
 			  compat/inttypes.h compat/stdbool.h compat/unistd.h \
 			  compat/sys/time.h compat/getopt/getopt.h \
-			  crc32.c hefty1.c \
+			  crc32.c hefty1.c gpu_optimize.c optimize.c \
 			  ccminer.cpp pools.cpp util.cpp bench.cpp bignum.cpp \
 			  api.cpp hashlog.cpp nvml.cpp stats.cpp sysinfos.cpp cuda.cpp \
 			  nvsettings.cpp \
