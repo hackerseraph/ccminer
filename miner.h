@@ -540,6 +540,10 @@ struct option {
 extern int options_count();
 
 extern bool opt_benchmark;
+extern bool opt_profile;
+extern bool opt_sha256d_bench;
+extern int opt_sha256d_bench_iters;
+extern bool opt_sha256d_bench_sweep;
 extern bool opt_debug;
 extern bool opt_quiet;
 extern bool opt_protocol;
@@ -669,6 +673,9 @@ void bench_free();
 bool bench_algo_switch_next(int thr_id);
 void bench_set_throughput(int thr_id, uint32_t throughput);
 void bench_display_results();
+
+// sha256d microbenchmark
+void sha256d_microbench(int thr_id, uint32_t threads, int iterations);
 
 struct stratum_job {
 	char *job_id;

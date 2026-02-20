@@ -87,6 +87,10 @@ bool opt_debug_diff = false;
 bool opt_debug_threads = false;
 bool opt_protocol = false;
 bool opt_benchmark = false;
+bool opt_sha256d_bench = false;
+int opt_sha256d_bench_iters = 50;
+bool opt_sha256d_bench_sweep = false;
+bool opt_profile = false;
 bool opt_showdiff = true;
 bool opt_hwmonitor = true;
 
@@ -349,6 +353,7 @@ Options:\n\
       --no-color        disable colored output\n\
   -D, --debug           enable debug output\n\
   -P, --protocol-dump   verbose dump of protocol-level activities\n\
+	--profile         enable lightweight performance profiling\n\
       --cpu-affinity    set process affinity to cpu core(s), mask 0x3 for cores 0 and 1\n\
       --cpu-priority    set process priority (default: 3) 0 idle, 2 normal to 5 highest\n\
   -b, --api-bind=port   IP:port for the miner API (default: 127.0.0.1:4068), 0 disabled\n\
@@ -383,6 +388,8 @@ Options:\n\
       --hide-diff       hide submitted block and net difficulty (old mode)\n\
   -B, --background      run the miner in the background\n\
       --benchmark       run in offline benchmark mode\n\
+	--sha256d-bench[=N]  run SHA256d microbenchmark with N iterations (default: 50)\n\
+	--sha256d-bench-sweep  sweep throughput sizes for SHA256d microbenchmark\n\
       --cputest         debug hashes from cpu algorithms\n\
   -c, --config=FILE     load a JSON-format configuration file\n\
   -V, --version         display version information and exit\n\
@@ -408,6 +415,8 @@ struct option options[] = {
 	{ "api-mcast-des", 1, NULL, 1037 },
 	{ "background", 0, NULL, 'B' },
 	{ "benchmark", 0, NULL, 1005 },
+	{ "sha256d-bench", optional_argument, NULL, 1201 },
+	{ "sha256d-bench-sweep", 0, NULL, 1202 },
 	{ "cert", 1, NULL, 1001 },
 	{ "config", 1, NULL, 'c' },
 	{ "cputest", 0, NULL, 1006 },
@@ -446,6 +455,7 @@ struct option options[] = {
 	{ "pool-max-rate", 1, NULL, 1162 }, // pool
 	{ "pool-disabled", 1, NULL, 1199 }, // pool
 	{ "protocol-dump", 0, NULL, 'P' },
+		{ "profile", 0, NULL, 1203 },
 	{ "proxy", 1, NULL, 'x' },
 	{ "quiet", 0, NULL, 'q' },
 	{ "retries", 1, NULL, 'r' },
@@ -3448,6 +3458,29 @@ void parse_arg(int key, char *arg)
 		want_stratum = false;
 		have_stratum = false;
 		break;
+	case 1201:
+		opt_sha256d_bench = true;
+		opt_benchmark = true;
+		want_longpoll = false;
+		want_stratum = false;
+		have_stratum = false;
+		if (arg && arg[0] != '\0')
+			opt_sha256d_bench_iters = atoi(arg);
+		if (opt_sha256d_bench_iters <= 0)
+			opt_sha256d_bench_iters = 50;
+		if (opt_algo == ALGO_AUTO)
+			opt_algo = ALGO_SHA256D;
+		break;
+	case 1202:
+		opt_sha256d_bench_sweep = true;
+		opt_sha256d_bench = true;
+		opt_benchmark = true;
+		want_longpoll = false;
+		want_stratum = false;
+		have_stratum = false;
+		if (opt_algo == ALGO_AUTO)
+			opt_algo = ALGO_SHA256D;
+		break;
 	case 1006:
 		print_hash_tests();
 		proper_exit(EXIT_CODE_OK);
@@ -3491,6 +3524,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1019: // max-log-rate
 		opt_maxlograte = atoi(arg);
+		break;
+	case 1203:
+		opt_profile = true;
 		break;
 	case 1020:
 		p = strstr(arg, "0x");
@@ -4015,6 +4051,24 @@ int main(int argc, char *argv[])
 	cuda_stream_pool_init();
 	gpu_mem_pool_init(256 * 1024 * 1024);  // Pre-allocate 256MB
 	prefetch_queue_init();
+
+	if (opt_sha256d_bench) {
+		for (int n = 0; n < opt_n_threads; n++) {
+			uint32_t base = cuda_default_throughput(n, 1U << 25);
+			uint32_t sweep[] = { base >> 2, base >> 1, base, base << 1 };
+			if (opt_sha256d_bench_sweep) {
+				for (int i = 0; i < 4; i++) {
+					uint32_t throughput = sweep[i];
+					if (throughput < (1U << 20))
+						throughput = (1U << 20);
+					sha256d_microbench(n, throughput, opt_sha256d_bench_iters);
+				}
+			} else {
+				sha256d_microbench(n, base, opt_sha256d_bench_iters);
+			}
+		}
+		proper_exit(0);
+	}
 
 	thr_info = (struct thr_info *)calloc(opt_n_threads + 5, sizeof(*thr));
 	if (!thr_info)

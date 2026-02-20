@@ -118,9 +118,9 @@ endif
 ccminer_LDADD += -lcuda
 
 nvcc_ARCH :=
-#nvcc_ARCH += -gencode=arch=compute_75,code=\"sm_75,compute_75\" # CUDA 10 req.
+nvcc_ARCH += -gencode=arch=compute_75,code=\"sm_75,compute_75\" # CUDA 10 req.
 #nvcc_ARCH += -gencode=arch=compute_70,code=\"sm_70,compute_70\" # CUDA 9.1
-#nvcc_ARCH += -gencode=arch=compute_61,code=\"sm_61,compute_61\" # CUDA 8
+nvcc_ARCH += -gencode=arch=compute_61,code=\"sm_61,compute_61\" # CUDA 8
 nvcc_ARCH += -gencode=arch=compute_52,code=\"sm_52,compute_52\"
 #nvcc_ARCH += -gencode=arch=compute_50,code=\"sm_50,compute_50\"
 #nvcc_ARCH += -gencode=arch=compute_35,code=\"sm_35,compute_35\"
@@ -184,24 +184,24 @@ JHA/cuda_jha_compactionTest.o: JHA/cuda_jha_compactionTest.cu
 
 # This object does not use cuda device code but call the different kernels (autotune)
 scrypt/salsa_kernel.o: scrypt/salsa_kernel.cu
-	$(NVCC) $(JANSSON_INCLUDES) -I. @CUDA_INCLUDES@ @CUDA_CFLAGS@ -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 # These kernels are for older devices (SM)
 
 scrypt/test_kernel.o: scrypt/test_kernel.cu
-	$(NVCC) $(JANSSON_INCLUDES) -I. @CUDA_INCLUDES@ @CUDA_CFLAGS@ -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 scrypt/fermi_kernel.o: scrypt/fermi_kernel.cu
-	$(NVCC) $(JANSSON_INCLUDES) -I. @CUDA_INCLUDES@ @CUDA_CFLAGS@ -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 scrypt/kepler_kernel.o: scrypt/kepler_kernel.cu
-	$(NVCC) $(JANSSON_INCLUDES) -I. @CUDA_INCLUDES@ @CUDA_CFLAGS@ -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 scrypt/nv_kernel.o: scrypt/nv_kernel.cu
-	$(NVCC) $(JANSSON_INCLUDES) -I. @CUDA_INCLUDES@ @CUDA_CFLAGS@ -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 scrypt/titan_kernel.o: scrypt/titan_kernel.cu
-	$(NVCC) $(nvcc_FLAGS) -gencode=arch=compute_52,code=\"sm_52,compute_52\" -o $@ -c $<
+	$(NVCC) $(nvcc_FLAGS) -o $@ -c $<
 
 skein.o: skein.cu
 	$(NVCC) $(nvcc_FLAGS) --maxrregcount=64 -o $@ -c $<
